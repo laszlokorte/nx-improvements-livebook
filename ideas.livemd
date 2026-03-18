@@ -1,0 +1,215 @@
+# Nx improvements
+
+```elixir
+Mix.install([
+  {:nx, "~> 0.11.0"}
+])
+```
+
+## Introduction
+
+Some ideas to improve Nx ergonomics.
+
+## Nx.conv for 1D, 2D, 3D
+
+Nx supports discrete convolution only for >4D tensors
+
+```elixir
+# for convolution on 1D tensors we need to add 3 new axes and then squeeze them out again
+Nx.conv(
+  Nx.tensor([0, 0, 1, 1, 1, 0, 0]) |> Nx.new_axis(0) |> Nx.new_axis(0) |> Nx.new_axis(0),
+  Nx.tensor([1, 1, 1]) |> Nx.new_axis(0) |> Nx.new_axis(0) |> Nx.new_axis(0)
+)
+|> Nx.squeeze(axes: [0, 1, 2])
+```
+
+```elixir
+# for convolution in 2D tensors we still need to add two new temporary axes
+Nx.conv(
+  Nx.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]]) |> Nx.new_axis(0) |> Nx.new_axis(0),
+  Nx.tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+)
+|> Nx.squeeze(axes: [0, 1])
+```
+
+<!-- livebook:{"branch_parent_index":1} -->
+
+## Does not work but would be nice
+
+```elixir
+# it would be nice if conv could be applied to two 1D and 2D tensors directly
+Nx.conv(
+  Nx.tensor([0, 0, 1, 0, 0]),
+  Nx.tensor([1, 1, 1])
+)
+```
+
+```elixir
+Nx.conv(
+  Nx.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]]),
+  Nx.tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
+)
+```
+
+## Nx.Defn.grad and Nx.conv
+
+```elixir
+# for convolutional neural networks we are interested in the gradient of the kernel
+image = Nx.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+kernel = Nx.tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+
+# this does work an gives the gradients for both the image and the kernel
+# but we do not need the image gradient.
+# Especially since the image might be large, giving a large number of not needed gradient values
+Nx.Defn.grad({image, kernel}, fn {i, k} ->
+  Nx.conv(
+    i,
+    k
+  )
+  |> Nx.sum()
+end)
+```
+
+<!-- livebook:{"branch_parent_index":3} -->
+
+## Nx.Defn.grad and Nx.conv
+
+```elixir
+image = Nx.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+kernel = Nx.tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+
+# This does work and gives the gradient for only the image
+# But we would want the kernel gradient
+Nx.Defn.grad({image}, fn {i} ->
+  Nx.conv(
+    i,
+    kernel
+  )
+  |> Nx.sum()
+end)
+```
+
+<!-- livebook:{"branch_parent_index":3} -->
+
+## Does not work
+
+```elixir
+image = Nx.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+kernel = Nx.tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+
+# I would expect conv to be commutative
+# but taking the gradient of only the kernel with the image being constant does NOT work
+# this would be used to convolutional neural nets to learn the kernel matrix via gradient descent
+Nx.Defn.grad({kernel}, fn {k} ->
+  Nx.conv(
+    image,
+    k
+  )
+  |> Nx.sum()
+end)
+```
+
+<!-- livebook:{"branch_parent_index":3} -->
+
+## Does work
+
+```elixir
+image = Nx.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+kernel = Nx.tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+
+# taking the grad of only the kernel does work if the arguments of conv/2 are swapped
+Nx.Defn.grad({kernel}, fn {k} ->
+  Nx.conv(
+    k,
+    image
+  )
+  |> Nx.sum()
+end)
+```
+
+## Padding
+
+```elixir
+# constant padding does work
+Nx.pad(Nx.tensor([[1,2,3]]), 0, [{1,1,0},{1,1,0}])
+```
+
+```elixir
+Nx.reflect(Nx.tensor([[1, 2, 3]]), padding_config: [{3, 3}, {3, 3}])
+```
+
+<!-- livebook:{"branch_parent_index":7} -->
+
+## Would be nice
+
+```elixir
+Nx.cyclic(Nx.tensor([[1, 2, 3]]), padding_config: [{3, 3}, {3, 3}])
+```
+
+```elixir
+defmodule NxPad do
+  import Nx.Defn
+
+  def cyclic(t, pads) do
+    pads
+    |> Enum.with_index()
+    |> Enum.reduce(t, fn {{left, right}, axis}, acc ->
+      pad_axis(acc, left: left, right: right, axis: axis)
+    end)
+  end
+
+  defnp pad_axis(t, opts) do
+    opts = keyword!(opts, [:axis, :left, :right])
+    axis = opts[:axis]
+    left = opts[:left]
+    right = opts[:right]
+    size = Nx.axis_size(t, axis)
+
+    # build wrapped indices
+    idx =
+      [
+        Nx.iota({max(left, 1)}),
+        Nx.iota({size}),
+        Nx.iota({max(right, 1)}) |> Nx.add(size)
+      ]
+      |> Nx.concatenate()
+      |> Nx.slice_along_axis(1 - min(1, left), left + size + right, axis: 0)
+      |> Nx.add(size)
+      |> Nx.remainder(size)
+
+    Nx.take(t, idx, axis: axis)
+  end
+end
+
+NxPad.cyclic(Nx.tensor([[[1, 2, 3]]]), [{0, 0}, {3, 3}, {3, 3}])
+```
+
+```elixir
+# then this could be done:
+
+Nx.conv(
+  Nx.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]])
+  |> NxPad.cyclic([{1, 1}, {1, 1}])
+  |> Nx.new_axis(0)
+  |> Nx.new_axis(0),
+  Nx.tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]]) |> Nx.new_axis(0) |> Nx.new_axis(0)
+)
+|> Nx.squeeze(axes: [0, 1])
+```
+
+<!-- livebook:{"branch_parent_index":7} -->
+
+## Would be nice
+
+```elixir
+# or even better:
+
+Nx.conv(
+  Nx.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]]) |> Nx.new_axis(0) |> Nx.new_axis(0),
+  Nx.tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]]) |> Nx.new_axis(0) |> Nx.new_axis(0),
+  # the the conv operation to apply cyclic padding internally
+  padding: {:same, :cyclic},
+  
+)
+|> Nx.squeeze(axes: [0, 1])
+```
