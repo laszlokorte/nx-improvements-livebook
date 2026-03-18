@@ -127,7 +127,7 @@ Nx.Defn.grad({kernel}, fn {k} ->
 end)
 ```
 
-## Padding
+## Cyclic Padding
 
 ```elixir
 # constant padding does work
@@ -145,6 +145,10 @@ Nx.reflect(Nx.tensor([[1, 2, 3]]), padding_config: [{3, 3}, {3, 3}])
 ```elixir
 Nx.cyclic(Nx.tensor([[1, 2, 3]]), padding_config: [{3, 3}, {3, 3}])
 ```
+
+## Custom Cylic Padding
+
+Currently we can implement cyclic padding manually but it would be nice to be included in Nx. It would be even nicer if this could be implemented as a lazy view to not actually copying the values around.
 
 ```elixir
 defmodule NxPad do
@@ -200,6 +204,8 @@ Nx.conv(
 <!-- livebook:{"branch_parent_index":7} -->
 
 ## Would be nice
+
+By delegating the cyclic padding the the `Nx.conv` operation the fourier transform properties of cylic convolution could be used for optimization.
 
 ```elixir
 # or even better:
