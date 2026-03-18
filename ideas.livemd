@@ -111,6 +111,22 @@ end)
 
 <!-- livebook:{"branch_parent_index":3} -->
 
+## Applying padding manually inside grad does work
+
+```elixir
+Nx.Defn.grad({kernel}, fn {k} ->
+  Nx.pad(
+    image,
+    0,
+    [{1, 1, 1}, {1, 1, 1}, {0, 0, 0}, {0, 0, 0}]
+  )
+  |> Nx.add(k)
+  |> Nx.product()
+end)
+```
+
+<!-- livebook:{"branch_parent_index":3} -->
+
 ## Does work
 
 ```elixir
@@ -138,7 +154,7 @@ Nx.pad(Nx.tensor([[1,2,3]]), 0, [{1,1,0},{1,1,0}])
 Nx.reflect(Nx.tensor([[1, 2, 3]]), padding_config: [{3, 3}, {3, 3}])
 ```
 
-<!-- livebook:{"branch_parent_index":7} -->
+<!-- livebook:{"branch_parent_index":8} -->
 
 ## Would be nice
 
@@ -201,7 +217,7 @@ Nx.conv(
 |> Nx.squeeze(axes: [0, 1])
 ```
 
-<!-- livebook:{"branch_parent_index":7} -->
+<!-- livebook:{"branch_parent_index":8} -->
 
 ## Would be nice
 
